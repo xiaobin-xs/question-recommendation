@@ -59,6 +59,35 @@ def parse_args():
         help="batch size",
     )
 
+    parser.add_argument(
+        "--score",
+        type=str,
+        default='cosine',
+        choices=['cosine', 'custom'],
+        help="number of epochs",
+    )
+
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.001,
+        help="learning rate",
+    )
+
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=20,
+        help="number of epochs",
+    )
+
+    parser.add_argument(
+        "--margin-hinge",
+        type=float,
+        default=0.1,
+        help="margin for the hinge loss",
+    )
+
     # TODO: Add more arguments here
 
 
