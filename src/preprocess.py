@@ -39,6 +39,8 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
                 if sum(candidate_labels) == 0 and next_query is not None:
                     candidate_query.append(next_query)
                     candidate_labels.append(1)
+                if len(candidate_labels) < 1:
+                    continue
                 
                 # Create a group for each observation
                 obs_group = h5f.create_group(interactionId)

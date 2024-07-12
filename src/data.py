@@ -37,7 +37,7 @@ def chat_collate_fn(batch, max_history_length=-1):
     query_histories = [item['query_history'] for item in batch]
     if max_history_length > 0:
         query_histories = [hist[:max_history_length] for hist in query_histories]
-    history_lengths = [len(hist) for hist in query_histories]
+    history_lengths = torch.tensor([len(hist) for hist in query_histories])
     max_history_length = max(history_lengths)
     padded_histories = [torch.cat([hist, torch.zeros(max_history_length - len(hist), embed_size)]) 
                         for hist in query_histories]
@@ -100,12 +100,14 @@ def get_data_loaders(args):
                                   collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
                                   worker_init_fn=seed_worker, generator=g)
         # print train, val, test dataloader sizes
+        embed_size = train_dataset[0]['current_query'].size(0)
+        print(f"Using {args.sentence_transformer_type} sentence transformer with embedding size {embed_size}")
         print(f"Train dataloader size: {len(train_loader)}")
         print(f"Val dataloader size: {len(val_loader)}")
         print(f"Test dataloader size: {len(test_loader)}")
     else:
         raise FileNotFoundError(f"File {raw_json_file} not found in {data_folder}")
 
-    return train_loader, val_loader, test_loader
+    return train_loader, val_loader, test_loader, embed_size
 
 
