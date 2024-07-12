@@ -24,6 +24,21 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--sentence-transformer-type",
+        type=str,
+        default='finetuned',
+        choices=['finetuned', 'pretrained'],
+        help="path to the fine tuned Sentence Transformer model",
+    )
+
+    parser.add_argument(
+        "--sentence-transformer-path",
+        type=str,
+        default='sentence-transformer/embedding_model_tuned/', # 'sentence-transformers/paraphrase-MiniLM-L6-v2'
+        help="local path to the fine tuned Sentence Transformer model; or the name of the pre-trained model from the sentence-transformers library",
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=1234,
@@ -32,8 +47,9 @@ def parse_args():
 
     parser.add_argument(
         "--max-history-len",
-        default=None,
-        help="maximum length of past history history. None means all history is used"
+        type=int,
+        default=-1,
+        help="maximum length of past history history. -1 means all history is used"
     )
 
     parser.add_argument(

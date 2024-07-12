@@ -6,10 +6,6 @@ import os, h5py
 
 from embed import get_sentence_embedding_model
 
-sent_transformer_path = 'sentence-transformer/embedding_model_tuned/'
-embed_type, embed_model, sent_trans_embed_size = \
-    get_sentence_embedding_model(model_name='fine-tuned', sent_transformer_path=sent_transformer_path)
-
 def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
     seed = args.seed
 
@@ -24,14 +20,13 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
     val_chatId = sorted_chatId[int(0.7*len(sorted_chatId)):int(0.85*len(sorted_chatId))]
     test_chatId = sorted_chatId[int(0.85*len(sorted_chatId)):]
 
-    sent_transformer_path = 'sentence-transformer/embedding_model_tuned/'
     embed_type, embed_model, sent_trans_embed_size = \
-        get_sentence_embedding_model(model_name='fine-tuned', sent_transformer_path=sent_transformer_path)
+        get_sentence_embedding_model(args)
     encode_func = embed_model.embed_documents if embed_type == 'SentenceTransformerEmbeddings' else embed_model.encode
 
     for chatId_list, split in zip([train_chatId, val_chatId, test_chatId], ['train', 'val', 'test']):
         df_split = df[df['chatId'].isin(chatId_list)]
-        with h5py.File(os.path.join(data_folder, f'{save_file_name}_{split}-seed_{args.seed}.h5'), 'w') as h5f:
+        with h5py.File(os.path.join(data_folder, f'{save_file_name}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'), 'w') as h5f:
             for interactionId in tqdm(df_split['id'].tolist()):
                 curr_data = df_split[df_split['id'] == interactionId]
                 chatId = curr_data['chatId'].values[0]

@@ -21,9 +21,10 @@ def main():
     log_path = os.path.join(log_dir, "run.log")
     sys.stdout = DualLogger(log_path)
     sys.stderr = sys.stdout  # Redirect stderr to the same logger
+    print_args(args)
 
     train_loader, val_loader, test_loader = get_data_loaders(args)
-    print_args(args)
+
 
 if __name__ == '__main__':
     main()

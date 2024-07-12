@@ -16,16 +16,17 @@ def encode_sentence(sentence):
     sentence_embedding = outputs.last_hidden_state.mean(dim=1)
     return sentence_embedding
 
-def get_sentence_embedding_model(model_name='fine-tuned', sent_transformer_path=None):
+def get_sentence_embedding_model(args):
     '''
+    args.sentence_transformer_type is 'finetuned' or 'pretrained'
     model_name: str, ['fine-tuned', 'sentence-transformers/paraphrase-MiniLM-L6-v2', other models from sentence-transformers library]
     '''
-    if model_name == 'fine-tuned':
+    if args.sentence_transformer_type == 'finetuned':
         model_type = 'SentenceTransformerEmbeddings'
-        model = SentenceTransformerEmbeddings(model_name=sent_transformer_path)
+        model = SentenceTransformerEmbeddings(model_name=args.sentence_transformer_path)
         embed_size = 384
     else:
         model_type = 'SentenceTransformer'
-        model = SentenceTransformer(model_name)
+        model = SentenceTransformer(args.sentence_transformer_path)
         embed_size = model.get_sentence_embedding_dimension()
     return model_type, model, embed_size

@@ -4,3 +4,4 @@ sentence-transformer/
 test.ipynb
 data/*
 experiments/*
+scripts/*.sh
