@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=1234,
         help="random seed",
     )
 
@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=32,
+        default=16,
         help="batch size",
     )
 

@@ -68,18 +68,20 @@ def get_data_loaders(args):
 
     data_folder = args.data_folder
     raw_json_file = args.raw_json_file
-    preprocessed_data_filename = 'chat_recommendation_dataset'
+    preprocessed_data_filename = 'chat_preprocessed'
     max_history_len = args.max_history_len
     batch_size = args.batch_size
 
     if os.path.exists(os.path.join(data_folder, raw_json_file)):
         # Preprocess the raw JSON file
-        if not os.path.exists(os.path.join(data_folder, preprocessed_data_filename+'_test.h5')):
+        if not os.path.exists(os.path.join(data_folder, f'{preprocessed_data_filename}_test-seed_{args.seed}.h5')):
             print(f"Preprocessing data from {raw_json_file}...")
-            prepare_chat_data(data_folder, raw_json_file, preprocessed_data_filename, args.seed)
-        train_dataset = HDF5Dataset(os.path.join(data_folder, preprocessed_data_filename+'_train.h5'))
-        val_dataset   = HDF5Dataset(os.path.join(data_folder, preprocessed_data_filename+'_val.h5'))
-        test_dataset  = HDF5Dataset(os.path.join(data_folder, preprocessed_data_filename+'_test.h5'))
+            prepare_chat_data(data_folder, raw_json_file, preprocessed_data_filename, args)
+        else:
+            print(f"Data already preprocessed data for {raw_json_file}, directly loading the preprocessed data...")
+        train_dataset = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_train-seed_{args.seed}.h5'))
+        val_dataset   = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_val-seed_{args.seed}.h5'))
+        test_dataset  = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_test-seed_{args.seed}.h5'))
         
         # to ensure reproducibility
         g = torch.Generator()

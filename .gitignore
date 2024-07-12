@@ -1,0 +1,6 @@
+.DS_Store
+*__pycache__*
+sentence-transformer/
+test.ipynb
+data/*
+experiments/*
