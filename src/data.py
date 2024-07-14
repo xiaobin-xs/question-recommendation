@@ -38,14 +38,14 @@ def chat_collate_fn(batch, max_history_length=-1):
     if max_history_length > 0:
         query_histories = [hist[:max_history_length] for hist in query_histories]
     history_lengths = torch.tensor([len(hist) for hist in query_histories])
-    max_history_length = max(history_lengths)
+    max_history_length = max(history_lengths).item()
     padded_histories = [torch.cat([hist, torch.zeros(max_history_length - len(hist), embed_size)]) 
                         for hist in query_histories]
     padded_histories = torch.stack(padded_histories)
     
     candidates = [item['candidate_embeddings'] for item in batch]
-    candidate_lengths = [len(cand) for cand in candidates]
-    max_candidates_length = max(candidate_lengths)
+    candidate_lengths = torch.tensor([len(cand) for cand in candidates])
+    max_candidates_length = max(candidate_lengths).item()
     padded_candidates = [torch.cat([cand, torch.zeros(max_candidates_length - len(cand), embed_size)]) 
                          for cand in candidates]
     padded_candidates = torch.stack(padded_candidates)

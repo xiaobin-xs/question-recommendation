@@ -60,7 +60,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--score",
+        "--score-fn",
         type=str,
         default='cosine',
         choices=['cosine', 'custom'],
@@ -86,6 +86,13 @@ def parse_args():
         type=float,
         default=0.1,
         help="margin for the hinge loss",
+    )
+
+    parser.add_argument(
+        "--weight-bce",
+        type=float,
+        default=1.0,
+        help="weight for the binary cross entropy loss",
     )
 
     # TODO: Add more arguments here

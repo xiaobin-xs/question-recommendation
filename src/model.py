@@ -52,14 +52,14 @@ class Score(nn.Module):
 
 # Main Recommendation Model
 class QuestionRecommender(nn.Module):
-    def __init__(self, hidden_size, score='cosine'):
+    def __init__(self, hidden_size, score_fn='cosine'):
         super(QuestionRecommender, self).__init__()
         self.history_encoder = HistoryEncoder(hidden_size, hidden_size)
         self.fc = nn.Linear(hidden_size * 2, hidden_size)  # Combine history and query embeddings
-        if score == 'cosine':
-            self.score = nn.CosineSimilarity(dim=-1)  # Compute cosine similarity
+        if score_fn == 'cosine':
+            self.score_fn = nn.CosineSimilarity(dim=-1)  # Compute cosine similarity
         else:
-            self.score = Score(hidden_size)
+            self.score_fn = Score(hidden_size)
 
     def forward(self, current_query_embedding, history_embeddings, history_lengths, candidate_embeddings):
         # query, histories, history_lengths, candidates, candidate_lengths
@@ -71,6 +71,6 @@ class QuestionRecommender(nn.Module):
         combined_embedding = self.fc(combined_context)
         
         # Compute similarity scores with each candidate question
-        scores = self.score(combined_embedding, candidate_embeddings)
+        scores = self.score_fn(combined_embedding, candidate_embeddings)
         return scores
 

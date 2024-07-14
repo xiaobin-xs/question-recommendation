@@ -6,6 +6,7 @@ class HingeRankLoss(nn.Module):
     def __init__(self, margin=0.1):
         super(HingeRankLoss, self).__init__()
         self.margin = margin
+    
     def forward(self, scores, candidate_lengths, labels):
         batch_size, max_cand_len = scores.shape
         total_loss = 0.0
@@ -23,7 +24,7 @@ class HingeRankLoss(nn.Module):
             # Get the indices of positive and negative labels
             pos_indices = (label == 1).nonzero(as_tuple=True)[0]
             neg_indices = (label == 0).nonzero(as_tuple=True)[0]
-            
+
             if neg_indices.numel() == 0:
                 continue  # Skip observations with no negative labels
 
@@ -47,60 +48,28 @@ class BinaryCELoss(nn.Module):
     def __init__(self):
         super(BinaryCELoss, self).__init__()
         self.bceloss = nn.BCELoss(reduction='none')
+    
     def forward(self, scores, candidate_lengths, labels):
-        batch_size, max_cand_len = scores.shape
-        total_loss = 0.0
-        valid_observations = 0
+        max_cand_len = scores.shape[1]
+        indices = torch.arange(max_cand_len, device=scores.device)
+        mask = indices < candidate_lengths.unsqueeze(1) # mask for non-padded candidates
 
-        self.bceloss(scores, labels)
+        loss = self.bceloss(scores, labels)
+        loss = (loss * mask).mean(1) / mask.sum(1)
 
-        # for i in range(batch_size):
-        #     cand_len = candidate_lengths[i]
-        #     if cand_len == 0:
-        #         continue  # Skip observations with zero candidates
+        return loss.mean()
 
-        #     # Get the valid candidates for the current observation
-        #     score = scores[i, :cand_len]
-        #     label = labels[i, :cand_len]
-
-        #     curr_loss = self.bceloss(score.unsqueeze(0), label.unsqueeze(0))
-        #     total_loss += curr_loss
-        #     valid_observations += 1
-
-        # if valid_observations == 0:
-        #     return torch.tensor(0.0, requires_grad=True)  # Return 0 if no valid observations
-        
-        average_loss = total_loss / valid_observations
-        return average_loss
 
 class RecommendationLoss(nn.Module):
-    def __init__(self, margin=1.0):
+    def __init__(self, margin_hinge=0.1, weight_bce=1.0):
         super(RecommendationLoss, self).__init__()
-        self.margin = margin
-        self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.hingeRankLoss = HingeRankLoss(margin=margin_hinge)
+        self.bceLoss = BinaryCELoss()
+        self.weight_bce = weight_bce
 
-    def forward(self, scores, chosen_idx, ignored_idxs, all_ignored=False):
-        # Scores is a tensor of shape (batch_size, num_candidates)
-        
-        # Ranking Loss: Hinge loss
-        if all_ignored:
-            # If all recommended questions are ignored, treat all as negative examples
-            ignored_scores = scores  # All scores are considered as ignored
-            chosen_scores = torch.full_like(scores[:, 0], -self.margin)  # Use a negative margin to indicate no selection
-        else:
-            chosen_scores = scores[:, chosen_idx]  # Shape (batch_size,)
-            ignored_scores = scores[:, ignored_idxs]  # Shape (batch_size, num_ignored)
-
-        ranking_loss = torch.mean(torch.clamp(self.margin + ignored_scores - chosen_scores.unsqueeze(1), min=0))
-
-        # Cross-Entropy Loss for recommendation classification
-        if all_ignored:
-            # If all recommended questions are ignored, set target to zeros
-            target_labels = torch.zeros_like(scores)
-            ce_loss = self.cross_entropy_loss(scores, target_labels)
-        else:
-            ce_loss = self.cross_entropy_loss(scores, chosen_idx)
-
-        # Combine losses with predefined weights
-        combined_loss = ranking_loss + ce_loss  # Adjust weights as needed
+    def forward(self, scores, candidate_lengths, labels):
+        # Scores: (batch_size, max_num_candidates)
+        hinge_rank_loss = self.hingeRankLoss(scores, candidate_lengths, labels)
+        bce_loss = self.bceLoss(scores, candidate_lengths, labels)
+        combined_loss = hinge_rank_loss + self.weight_bce * bce_loss
         return combined_loss
