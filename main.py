@@ -2,6 +2,8 @@ import os, sys
 import torch
 from datetime import datetime
 
+sys.path.append('src/')
+
 from data import get_data_loaders
 from logger import DualLogger
 from params import parse_args, print_args
@@ -11,8 +13,10 @@ def main():
     args = parse_args()
 
     args.name = '-'.join([
-        datetime.now().strftime("%Y_%m_%d-%H_%M_%S"), # TODO: add more args
-        f"seed_{args.seed}"
+        datetime.now().strftime('%Y_%m_%d-%H_%M_%S'), # TODO: add more args
+        f'{args.sentence_transformer_type}',
+        f'{args.score_fn}',
+        f'seed_{args.seed}',
         ])
     
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -32,7 +36,7 @@ def main():
     args.embed_size = embed_size
 
     # train
-    train(args, train_loader, val_loader)
+    train(args, train_loader, val_loader, test_loader)
 
     # # evaluation
     # eval(args, test_loader)

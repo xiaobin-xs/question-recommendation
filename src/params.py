@@ -60,11 +60,25 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--lstm-dropout",
+        type=float,
+        default=0.1,
+        help="dropout rate for the LSTM",
+    )
+
+    parser.add_argument(
         "--score-fn",
         type=str,
         default='cosine',
         choices=['cosine', 'custom'],
         help="number of epochs",
+    )
+
+    parser.add_argument(
+        "--fc-dropout",
+        type=float,
+        default=0.1,
+        help="dropout rate for the fully connected layer in the Score module, if score_fn is 'custom'",
     )
 
     parser.add_argument(

@@ -5,9 +5,9 @@ import torch.nn.functional as F
 
 # Sequential Model for User History
 class HistoryEncoder(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, dropout=0.1, num_layers=1):
         super(HistoryEncoder, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, dropout=dropout, batch_first=True)
         # self.attention = nn.Linear(hidden_size, 1)  # Attention layer to weigh history embeddings
 
     def forward(self, histories, history_lengths):
@@ -32,12 +32,40 @@ class HistoryEncoder(nn.Module):
 
         return last_outputs
     
+class MLP(nn.Module):
+    def __init__(self, input_size, output_size, dropout=0.1):
+        super(MLP, self).__init__()
+        hidden_size = (input_size + output_size) // 2
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+
+    
+class CosineSimilarityCalculator(nn.Module):
+    def __init__(self, dim=2, eps=1e-8):
+        super(CosineSimilarityCalculator, self).__init__()
+        self.cosine_similarity = nn.CosineSimilarity(dim=dim, eps=eps)
+    
+    def forward(self, combined_embedding, candidate_embeddings):
+        # combined_embedding: (batch_size, hidden_size)
+        # candidate_embeddings: (batch_size, num_candidates, hidden_size)
+        combined_embedding = combined_embedding.unsqueeze(1).expand_as(candidate_embeddings)
+        cosine_sim = self.cosine_similarity(candidate_embeddings, combined_embedding)
+        return (cosine_sim + 1) / 2  # Normalize to [0, 1]
+    
 class Score(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, dropout=0.1):
         super(Score, self).__init__()
         self.score_fn = nn.Sequential(
             nn.Linear(hidden_size*2, hidden_size),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size, 1)
             )
         self.sigmoid = nn.Sigmoid()
@@ -52,14 +80,17 @@ class Score(nn.Module):
 
 # Main Recommendation Model
 class QuestionRecommender(nn.Module):
-    def __init__(self, hidden_size, score_fn='cosine'):
+    def __init__(self, hidden_size, lstm_dropout=0.1, score_fn='cosine', fc_dropout=0.1):
+        '''
+        fc_dropout: dropout rate for the fully connected layer in the Score module, if score_fn is 'custom'
+        '''
         super(QuestionRecommender, self).__init__()
-        self.history_encoder = HistoryEncoder(hidden_size, hidden_size)
-        self.fc = nn.Linear(hidden_size * 2, hidden_size)  # Combine history and query embeddings
+        self.history_encoder = HistoryEncoder(hidden_size, hidden_size, dropout=lstm_dropout, num_layers=1)
+        self.fc = MLP(hidden_size * 2, hidden_size, dropout=fc_dropout)  # Combine history and query embeddings
         if score_fn == 'cosine':
-            self.score_fn = nn.CosineSimilarity(dim=-1)  # Compute cosine similarity
+            self.score_fn = CosineSimilarityCalculator()  # Compute cosine similarity
         else:
-            self.score_fn = Score(hidden_size)
+            self.score_fn = Score(hidden_size, dropout=fc_dropout)
 
     def forward(self, current_query_embedding, history_embeddings, history_lengths, candidate_embeddings):
         # query, histories, history_lengths, candidates, candidate_lengths
