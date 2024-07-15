@@ -40,11 +40,13 @@ def recalls_and_ndcgs_for_ks(scores, labels, ks):
     labels_float = labels.float()
     rank = (-scores).argsort(dim=1)
     cut = rank
+    labels_sum = labels.sum(1)
+    mask = labels_sum != 0
+    print(f'{mask.sum()/len(mask):.3f} of observations have no positive labels')
     for k in sorted(ks, reverse=True):
        cut = cut[:, :k]
        hits = labels_float.gather(1, cut)
-       labels_sum = labels.sum(1)
-       mask = labels_sum != 0
+       
        metrics['Recall@%d' % k] = \
            (hits.sum(1)[mask] / torch.min(torch.Tensor([k]).to(labels.device), labels.sum(1)[mask].float())).mean().cpu().item()
 

@@ -3,6 +3,12 @@ import random
 import torch
 import numpy as np
 
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda')
+# elif torch.backends.mps.is_available():
+#     DEVICE = torch.device('mps') # some error with mps...
+else:
+    DEVICE = torch.device('cpu')
 
 def print_args(args):
     print("Running with the following configuration:")
@@ -34,6 +40,14 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--device",
+        default=DEVICE,
+        # choices=['cuda', 'cpu', 'mps'],
+        help="device to run the model on",
+    )
+
+
+    parser.add_argument(
         "--sentence-transformer-type",
         type=str,
         default='finetuned',
@@ -63,6 +77,14 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--candidate-scope",
+        type=str,
+        default='batch',
+        choices=['own', 'batch'],
+        help="scope of candidates to consider during learning; 'own' means only consider the candidates for each query, 'batch' means consider all candidates in the batch",
+    )
+
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=16,
@@ -79,7 +101,7 @@ def parse_args():
     parser.add_argument(
         "--score-fn",
         type=str,
-        default='cosine',
+        default='custom',
         choices=['cosine', 'custom'],
         help="number of epochs",
     )

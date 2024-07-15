@@ -18,6 +18,7 @@ def train(args, train_loader, val_loader, test_loader):
     criterion = RecommendationLoss(margin_hinge=args.margin_hinge, weight_bce=args.weight_bce)
 
     accum_iter = 0
+    model = model.to(args.device)
     writer = SummaryWriter(log_dir=os.path.join(args.log_dir, 'runs'))
 
     for epoch in range(args.epochs):
@@ -29,25 +30,34 @@ def train(args, train_loader, val_loader, test_loader):
         # evaluate(args, model, val_loader, criterion, epoch)
 
 def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter):
+    model = model.to(args.device)
     model.train()
     average_meter_set = AverageMeterSet()
     for batch in data_loader:
-        current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels = batch
+        current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
+                batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = batch
+        current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
+                batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = \
+                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device), \
+                padded_candidates.to(args.device), candidate_lengths.to(args.device), labels.to(args.device), \
+                batch_candidates.to(args.device), candidate_lengths_for_batch_cand.to(args.device), labels_for_all_cand.to(args.device)
         batch_size = current_queries.size(0)
-        if batch_size < args.batch_size:
-            pass
         optimizer.zero_grad()
-        scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
-        loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+        if args.candidate_scope == 'own':
+            scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
+            loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+        else:
+            scores = model(current_queries, padded_histories, history_lengths, batch_candidates)
+            loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand)
         loss.backward()
         optimizer.step()
 
-        average_meter_set.update('tra loss', loss.item())
+        average_meter_set.update('tra loss', loss.cpu().item())
         average_meter_set.update('tra hinge', hinge_rank_loss)
         average_meter_set.update('tra bce', bce_loss)
         accum_iter += batch_size
 
-        if accum_iter % 50 == 0:
+        if accum_iter % 40 == 0:
             print('Epoch {}, running loss {:.3f} '.format(epoch+1, average_meter_set['tra loss'].avg))
     
     # TODO: save model checkpoint
@@ -64,11 +74,17 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
     all_labels_no_pad = []
     with torch.no_grad():
         for batch in data_loader:
-            current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels = batch
-            scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
-            loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+            current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
+                batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = batch
+            if args.candidate_scope == 'own':
+                scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
+                loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+            else:
+                scores = model(current_queries, padded_histories, history_lengths, batch_candidates)
+                loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand)
+                scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
 
-            average_meter_set.update(f'{mode} loss', loss.item())
+            average_meter_set.update(f'{mode} loss', loss.cpu().item())
             average_meter_set.update(f'{mode} hinge', hinge_rank_loss)
             average_meter_set.update(f'{mode} bce', bce_loss)
 
@@ -90,20 +106,23 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
         infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model)
 
     first_hit_perctg = calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
-    metrics = recalls_and_ndcgs_for_ks(all_scores_for_all_cand, all_labels_for_all_cand, [1, 3, 5, 10])
+    metrics = recalls_and_ndcgs_for_ks(all_scores_for_all_cand, all_labels_for_all_cand, args.ks)
 
     print(f'Epoch {epoch+1}, {mode} first hit%: {first_hit_perctg:.3f}')
     print('Epoch {}, {} loss {:.3f}, hinge {:.3f}, bce {:.3f}'.format(epoch+1, mode, average_meter_set[f'{mode} loss'].avg,
                                                                          average_meter_set[f'{mode} hinge'].avg,
                                                                          average_meter_set[f'{mode} bce'].avg
                                                           ))
-    print(metrics)
+    print(' '*25 + ', '.join([f'Recall@{k}: {metrics[f"Recall@{k}"]:.3f}' for k in args.ks]))
+    print(' '*25 + ', '.join([f'  NDCG@{k}: {metrics[f"NDCG@{k}"]:.3f}' for k in args.ks]))
 
     if writer:
         writer.add_scalar(f'{mode}/Loss', average_meter_set[f'{mode} loss'].avg, epoch)
         writer.add_scalar(f'{mode}/HingeLoss', average_meter_set[f'{mode} hinge'].avg, epoch)
         writer.add_scalar(f'{mode}/BCELoss', average_meter_set[f'{mode} bce'].avg, epoch)
         writer.add_scalar(f'{mode}/FirstHit%', first_hit_perctg, epoch)
+        if 10 in args.ks:
+            writer.add_scalar(f'{mode}/Recall@10', metrics['Recall@10'], epoch)
 
     if inference:
         split = 'train' if mode == 'Tra' else mode.lower()
@@ -125,7 +144,7 @@ def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_
     all_scores_for_all_cand = []
     with torch.no_grad():
         for batch in data_loader:
-            current_queries, padded_histories, history_lengths, _, _, _ = batch
+            current_queries, padded_histories, history_lengths, _, _, _, _, _, _ = batch
             batch_size = current_queries.size(0)
             scores = model(current_queries, padded_histories, history_lengths, all_candidates_no_pad.unsqueeze(0).expand(batch_size, -1, -1))
             all_scores_for_all_cand.append(scores)

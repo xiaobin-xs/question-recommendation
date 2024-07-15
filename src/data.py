@@ -69,7 +69,11 @@ class HDF5DatasetText(Dataset):
         return all_candidates_text, all_candidates_embed
 
 def chat_collate_fn(batch, max_history_length=-1):
+    '''
+    Only look at each query's own candidates (as compared to look at candidates from one batch)
+    '''
     current_queries = torch.stack([item['current_query'] for item in batch])
+    batch_size = current_queries.size(0)
     embed_size = current_queries.size(1)
 
     query_histories = [item['query_history'] for item in batch]
@@ -88,11 +92,59 @@ def chat_collate_fn(batch, max_history_length=-1):
                          for cand in candidates]
     padded_candidates = torch.stack(padded_candidates)
     
-    labels = [torch.cat([label, torch.zeros(max_candidates_length - len(label))]) 
-              for label in [item['candidate_labels'] for item in batch]]
-    labels = torch.stack(labels)
+    labels = [item['candidate_labels'] for item in batch]
+    labels_for_pad_cand = [torch.cat([label, torch.zeros(max_candidates_length - len(label))]) 
+              for label in labels]
+    labels_for_pad_cand = torch.stack(labels_for_pad_cand)
     
-    return current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels
+    candidate_lengths_cumsum = torch.cumsum(candidate_lengths, dim=0)
+    candidate_lengths_cumsum = torch.cat((torch.tensor([0], dtype=candidate_lengths_cumsum.dtype), candidate_lengths_cumsum)) # insert 0 at the beginning
+    batch_candidates = torch.vstack(candidates)
+    total_num_batch_cand = batch_candidates.size(0)
+
+    labels_for_all_cand = torch.zeros(len(labels), batch_candidates.size(0))
+    for r, label in enumerate(labels):
+        labels_for_all_cand[r, candidate_lengths_cumsum[r]:candidate_lengths_cumsum[r+1]] = label
+
+    batch_candidates = batch_candidates.unsqueeze(0).expand(batch_size, -1, -1)
+    candidate_lengths_for_batch_cand = total_num_batch_cand * torch.ones_like(candidate_lengths)
+
+    return current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels_for_pad_cand, \
+        batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand
+
+def chat_collate_fn_batch_cand(batch, max_history_length=-1):
+    '''
+    Look at candidates from the batch (as compared to only look at each query's own candidates)
+    '''
+    current_queries = torch.stack([item['current_query'] for item in batch])
+    batch_size = current_queries.size(0)
+    embed_size = current_queries.size(1)
+
+    query_histories = [item['query_history'] for item in batch]
+    if max_history_length > 0:
+        query_histories = [hist[:max_history_length] for hist in query_histories]
+    history_lengths = torch.tensor([len(hist) for hist in query_histories])
+    max_history_length = max(1, max(history_lengths).item()) # ensure there is at least one history, even if empty pad with all zeros
+    padded_histories = [torch.cat([hist, torch.zeros(max_history_length - len(hist), embed_size)]) 
+                        for hist in query_histories]
+    padded_histories = torch.stack(padded_histories)
+    
+    candidates = [item['candidate_embeddings'] for item in batch]
+    candidate_lengths = torch.tensor([len(cand) for cand in candidates])
+    candidate_lengths_cumsum = torch.cumsum(candidate_lengths, dim=0)
+    candidate_lengths_cumsum = torch.cat((torch.tensor([0], dtype=candidate_lengths_cumsum.dtype), candidate_lengths_cumsum)) # insert 0 at the beginning
+    batch_candidates = torch.vstack(candidates)
+    total_num_batch_cand = batch_candidates.size(0)
+    labels = [item['candidate_labels'] for item in batch]
+
+    labels_for_all_cand = torch.zeros(len(labels), batch_candidates.size(0))
+    for r, label in enumerate(labels):
+        labels_for_all_cand[r, candidate_lengths_cumsum[r]:candidate_lengths_cumsum[r+1]] = label
+
+    batch_candidates = batch_candidates.unsqueeze(0).expand(batch_size, -1, -1)
+    candidate_lengths = total_num_batch_cand * torch.ones_like(candidate_lengths)
+    
+    return current_queries, padded_histories, history_lengths, batch_candidates, candidate_lengths, labels_for_all_cand
 
 '''
 # Example dataloader usage:
@@ -101,7 +153,6 @@ max_history_length = 20
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, 
                         collate_fn=lambda batch: chat_collate_fn(batch, max_history_length))
 '''
-
 def get_data_loaders(args):
 
     data_folder = args.data_folder
@@ -109,6 +160,14 @@ def get_data_loaders(args):
     preprocessed_data_filename = args.preprocessed_data_filename # 'chat_preprocessed'
     max_history_len = args.max_history_len
     batch_size = args.batch_size
+    # candidate_scope = args.candidate_scope
+
+    # if candidate_scope == 'own':
+    #     chat_collate_fn = chat_collate_fn_own_cand
+    # elif candidate_scope == 'batch':
+    #     chat_collate_fn = chat_collate_fn_batch_cand
+    # else:
+    #     raise ValueError(f"Invalid candidate scope: {candidate_scope}")
 
     if os.path.exists(os.path.join(data_folder, raw_json_file)):
         # Preprocess the raw JSON file

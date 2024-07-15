@@ -17,6 +17,7 @@ def main():
         datetime.now().strftime('%Y_%m_%d-%H_%M_%S'), # TODO: add more args
         f'{args.sentence_transformer_type}',
         f'{args.score_fn}',
+        f'{args.candidate_scope}',
         f'dropout_{args.fc_dropout}',
         f'margin_{args.margin_hinge}',
         f'weight_{args.weight_bce}',

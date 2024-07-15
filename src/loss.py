@@ -72,4 +72,4 @@ class RecommendationLoss(nn.Module):
         hinge_rank_loss = self.hingeRankLoss(scores, candidate_lengths, labels)
         bce_loss = self.bceLoss(scores, candidate_lengths, labels)
         combined_loss = hinge_rank_loss + self.weight_bce * bce_loss
-        return combined_loss, hinge_rank_loss.item(), bce_loss.item()
+        return combined_loss, hinge_rank_loss.cpu().item(), bce_loss.cpu().item()
