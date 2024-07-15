@@ -24,6 +24,7 @@ def main():
     # Create a logs directory and a subdirectory for this run
     log_dir = os.path.join('experiments', args.name)
     os.makedirs(log_dir, exist_ok=True)
+    args.log_dir = log_dir
 
     # Set up dual logging to a file in the new directory and terminal
     log_path = os.path.join(log_dir, "run.log")
