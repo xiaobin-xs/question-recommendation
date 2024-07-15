@@ -8,6 +8,7 @@ from data import get_data_loaders
 from logger import DualLogger
 from params import parse_args, print_args
 from train import train
+from params import fix_random_seed_as
 
 def main():
     args = parse_args()
@@ -16,10 +17,15 @@ def main():
         datetime.now().strftime('%Y_%m_%d-%H_%M_%S'), # TODO: add more args
         f'{args.sentence_transformer_type}',
         f'{args.score_fn}',
+        f'dropout_{args.fc_dropout}',
+        f'margin_{args.margin_hinge}',
+        f'weight_{args.weight_bce}',
+        f'lr_{args.lr}',
         f'seed_{args.seed}',
         ])
     
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    fix_random_seed_as(args.seed)
 
     # Create a logs directory and a subdirectory for this run
     log_dir = os.path.join('experiments', args.name)

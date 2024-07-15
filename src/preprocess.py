@@ -45,11 +45,17 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
                 # Create a group for each observation
                 obs_group = h5f.create_group(interactionId)
                 obs_group.create_dataset('chatId', data=chatId)
+
+                # Add raw text
+                obs_group.create_dataset('current_query_text', data=current_query.encode('utf-8'))
+                obs_group.create_dataset('query_history_text', data=[seq.encode('utf-8') for seq in query_history])
+                obs_group.create_dataset('candidate_queries_text', data=[seq.encode('utf-8') for seq in candidate_query])
+                obs_group.create_dataset('next_query_text', data=(next_query if next_query is not None else '').encode('utf-8'))
                 
                 # Add current query embedding
                 current_query = ( encode_func([current_query]) ) [0]
                 obs_group.create_dataset('current_query', data=current_query)
-                
+
                 # Add query history embeddings
                 query_history = np.array([encode_func([seq])[0] for seq in query_history])
                 obs_group.create_dataset('query_history', data=query_history)
@@ -105,6 +111,7 @@ def process_chat_json(path, file):
     # remove punctuation and question mark, convert to lowercase
     dt['prompt_suggestions'] = dt.prompt_suggestions.apply(lambda x: [s.replace(r'[^\w\s]', '').lower() for s in x] if type(x) == list else x)
     dt['Query'] = dt['Query'].str.replace(r'[^\w\s]', '').str.lower()
+    dt['next_query'] = dt['next_query'].apply(lambda x: x.replace(r'[^\w\s]', '').lower() if type(x) == str else x)
 
     dt = dt[dt.Intent == 'ConceptsQA']
     # chatId_with_conceptsQA = dt[dt.Intent == 'ConceptsQA']['chatId'].unique()

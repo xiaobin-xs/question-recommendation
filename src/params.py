@@ -1,4 +1,7 @@
 import argparse
+import random
+import torch
+import numpy as np
 
 
 def print_args(args):
@@ -14,6 +17,13 @@ def parse_args():
         type=str,
         default="data/",
         help="path to the data folder",
+    )
+
+    parser.add_argument(
+        "--preprocessed-data-filename",
+        type=str,
+        default='chat_preprocessed',
+        help="filename for the preprocessed data",
     )
 
     parser.add_argument(
@@ -109,9 +119,25 @@ def parse_args():
         help="weight for the binary cross entropy loss",
     )
 
+    parser.add_argument(
+        "--ks",
+        type=list,
+        default=[1, 3, 5, 10, 30, 50],
+        help="list of k values for recall@k",
+    )
+
     # TODO: Add more arguments here
 
 
     args = parser.parse_args()
 
     return args
+
+# code from https://github.com/jaywonchung/BERT4Rec-VAE-Pytorch/blob/master/utils.py#L65
+def fix_random_seed_as(random_seed):
+    random.seed(random_seed)
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed_all(random_seed)
+    np.random.seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False

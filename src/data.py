@@ -23,12 +23,50 @@ class HDF5Dataset(Dataset):
             candidate_embeddings = torch.tensor(obs_group['candidate_embeddings'][:], dtype=torch.float32)
             candidate_labels = torch.tensor(obs_group['candidate_labels'][:], dtype=torch.long)
 
+        return {
+            'current_query': current_query,
+            'query_history': query_history,
+            'candidate_embeddings': candidate_embeddings,
+            'candidate_labels': candidate_labels,
+        }
+        
+class HDF5DatasetText(Dataset):
+    def __init__(self, hdf5_file):
+        self.hdf5_file = hdf5_file
+        with h5py.File(self.hdf5_file, 'r') as h5f:
+            self.interactionId_list = list(h5f.keys())
+            self.num_observations = len(self.interactionId_list)
+
+    def __len__(self):
+        return self.num_observations
+    
+    def __getitem__(self, idx):
+        with h5py.File(self.hdf5_file, 'r') as h5f:
+            obs_group = h5f[self.interactionId_list[idx]]
+            current_query = obs_group['current_query_text'][()].decode('utf-8')
+            query_history = [text.decode('utf-8') for text in obs_group['query_history_text'][()]]
+            candidates = [text.decode('utf-8') for text in obs_group['candidate_queries_text'][()]]
+            next_query = obs_group['next_query_text'][()].decode('utf-8')
+
             return {
                 'current_query': current_query,
                 'query_history': query_history,
-                'candidate_embeddings': candidate_embeddings,
-                'candidate_labels': candidate_labels
+                'candidates': candidates,
+                'next_query': next_query
             }
+
+    def get_all_candidates(self):
+        all_candidates_text = []
+        all_candidates_embed = []
+        with h5py.File(self.hdf5_file, 'r') as h5f:
+            for interactionId in list(h5f.keys()):
+                obs_group = h5f[interactionId]
+                candidate_text = [text.decode('utf-8') for text in obs_group['candidate_queries_text'][()]]
+                candidate_embed = obs_group['candidate_embeddings'][:]
+                all_candidates_text.extend(candidate_text)
+                all_candidates_embed.extend(candidate_embed)
+        all_candidates_embed = np.vstack(all_candidates_embed)
+        return all_candidates_text, all_candidates_embed
 
 def chat_collate_fn(batch, max_history_length=-1):
     current_queries = torch.stack([item['current_query'] for item in batch])
@@ -38,7 +76,7 @@ def chat_collate_fn(batch, max_history_length=-1):
     if max_history_length > 0:
         query_histories = [hist[:max_history_length] for hist in query_histories]
     history_lengths = torch.tensor([len(hist) for hist in query_histories])
-    max_history_length = max(history_lengths).item()
+    max_history_length = max(1, max(history_lengths).item()) # ensure there is at least one history, even if empty pad with all zeros
     padded_histories = [torch.cat([hist, torch.zeros(max_history_length - len(hist), embed_size)]) 
                         for hist in query_histories]
     padded_histories = torch.stack(padded_histories)
@@ -68,7 +106,7 @@ def get_data_loaders(args):
 
     data_folder = args.data_folder
     raw_json_file = args.raw_json_file
-    preprocessed_data_filename = 'chat_preprocessed'
+    preprocessed_data_filename = args.preprocessed_data_filename # 'chat_preprocessed'
     max_history_len = args.max_history_len
     batch_size = args.batch_size
 
