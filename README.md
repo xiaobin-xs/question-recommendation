@@ -21,6 +21,12 @@ python main.py \
 Example script: sweep through hyperparameters
 
 ```bash
+# Define the possible values for each hyperparameter
+dropout_values=(0.3 0.5 0.7)
+margin_hinge_values=(0.1 0.2 0.3)
+weight_bce_values=(0.5 1.0 1.5)
+
+# Loop through each combination of hyperparameters
 for dropout in "${dropout_values[@]}"
 do
     for margin_hinge in "${margin_hinge_values[@]}"
