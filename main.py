@@ -25,16 +25,15 @@ def main():
         f'seed_{args.seed}',
         ])
     
-    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     fix_random_seed_as(args.seed)
 
     # Create a logs directory and a subdirectory for this run
-    log_dir = os.path.join('experiments', args.name)
+    log_dir = os.path.join(args.root_dir, 'experiments', args.name)
     os.makedirs(log_dir, exist_ok=True)
     args.log_dir = log_dir
 
     # Set up dual logging to a file in the new directory and terminal
-    log_path = os.path.join(log_dir, "run.log")
+    log_path = os.path.join(args.root_dir, log_dir, "run.log")
     sys.stdout = DualLogger(log_path)
     sys.stderr = sys.stdout  # Redirect stderr to the same logger
     print_args(args)

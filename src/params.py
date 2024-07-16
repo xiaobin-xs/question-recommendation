@@ -19,6 +19,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        "--root-dir",
+        type=str,
+        default="./",
+        help="root directory of the project",
+    )
+
+    parser.add_argument(
         "--data-folder",
         type=str,
         default="data/",
@@ -74,14 +81,6 @@ def parse_args():
         type=int,
         default=-1,
         help="maximum length of past history history. -1 means all history is used"
-    )
-
-    parser.add_argument(
-        "--candidate-scope",
-        type=str,
-        default='batch',
-        choices=['own', 'batch'],
-        help="scope of candidates to consider during learning; 'own' means only consider the candidates for each query, 'batch' means consider all candidates in the batch",
     )
 
     parser.add_argument(

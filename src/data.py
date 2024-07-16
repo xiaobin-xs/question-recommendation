@@ -160,25 +160,17 @@ def get_data_loaders(args):
     preprocessed_data_filename = args.preprocessed_data_filename # 'chat_preprocessed'
     max_history_len = args.max_history_len
     batch_size = args.batch_size
-    # candidate_scope = args.candidate_scope
 
-    # if candidate_scope == 'own':
-    #     chat_collate_fn = chat_collate_fn_own_cand
-    # elif candidate_scope == 'batch':
-    #     chat_collate_fn = chat_collate_fn_batch_cand
-    # else:
-    #     raise ValueError(f"Invalid candidate scope: {candidate_scope}")
-
-    if os.path.exists(os.path.join(data_folder, raw_json_file)):
+    if os.path.exists(os.path.join(args.root_dir, data_folder, raw_json_file)):
         # Preprocess the raw JSON file
-        if not os.path.exists(os.path.join(data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5')):
+        if not os.path.exists(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5')):
             print(f"Preprocessing data from {raw_json_file}...")
             prepare_chat_data(data_folder, raw_json_file, preprocessed_data_filename, args)
         else:
             print(f"Data already preprocessed data for {raw_json_file}, directly loading the preprocessed data...")
-        train_dataset = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_train_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        val_dataset   = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_val_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        test_dataset  = HDF5Dataset(os.path.join(data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
+        train_dataset = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_train_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
+        val_dataset   = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_val_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
+        test_dataset  = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
         
         # to ensure reproducibility
         g = torch.Generator()

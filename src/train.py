@@ -19,7 +19,7 @@ def train(args, train_loader, val_loader, test_loader):
 
     accum_iter = 0
     model = model.to(args.device)
-    writer = SummaryWriter(log_dir=os.path.join(args.log_dir, 'runs'))
+    writer = SummaryWriter(log_dir=os.path.join(args.root_dir, args.log_dir, 'runs'))
 
     for epoch in range(args.epochs):
         print('-'*25 + f'Epoch {epoch+1}' + '-'*25)
@@ -27,10 +27,8 @@ def train(args, train_loader, val_loader, test_loader):
         evaluate(args, model, train_loader, criterion, epoch, writer, mode='Tra', inference=True)
         evaluate(args, model, val_loader, criterion, epoch, writer, mode='Val')
         evaluate(args, model, test_loader, criterion, epoch, writer, mode='Test')
-        # evaluate(args, model, val_loader, criterion, epoch)
 
 def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter):
-    model = model.to(args.device)
     model.train()
     average_meter_set = AverageMeterSet()
     for batch in data_loader:
@@ -60,7 +58,7 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
         if accum_iter % 40 == 0:
             print('Epoch {}, running loss {:.3f} '.format(epoch+1, average_meter_set['tra loss'].avg))
     
-    # TODO: save model checkpoint
+    # TODO: save model checkpoint; early stopping; best model based on validation recall@10
 
     return accum_iter
 
@@ -76,6 +74,11 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
         for batch in data_loader:
             current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
                 batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = batch
+            current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
+                batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = \
+                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device), \
+                padded_candidates.to(args.device), candidate_lengths.to(args.device), labels.to(args.device), \
+                batch_candidates.to(args.device), candidate_lengths_for_batch_cand.to(args.device), labels_for_all_cand.to(args.device)
             if args.candidate_scope == 'own':
                 scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
                 loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
@@ -94,16 +97,9 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
 
             all_candidates_no_pad.extend([padded_candidate[:candidate_length] for padded_candidate, candidate_length in zip(padded_candidates, candidate_lengths)])
             all_labels_no_pad.extend([label[:candidate_length] for label, candidate_length in zip(labels, candidate_lengths)])
-
-        # TODO: use candidates from all observations to compute metrics
-        # Have a list of candidates in raw format (text) for train/val/test, 
-        # together with labels indicating which is the correct next query for each observation.
-        # Use the scores from the model to rank the candidates for each observation.
-        # Compute metrics like MRR, Recall@k, etc. using the ranked candidates and the labels.
-    
     
     all_scores_for_all_cand, all_labels_for_all_cand = \
-        infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model)
+        infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args)
 
     first_hit_perctg = calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
     metrics = recalls_and_ndcgs_for_ks(all_scores_for_all_cand, all_labels_for_all_cand, args.ks)
@@ -113,8 +109,8 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
                                                                          average_meter_set[f'{mode} hinge'].avg,
                                                                          average_meter_set[f'{mode} bce'].avg
                                                           ))
-    print(' '*25 + ', '.join([f'Recall@{k}: {metrics[f"Recall@{k}"]:.3f}' for k in args.ks]))
-    print(' '*25 + ', '.join([f'  NDCG@{k}: {metrics[f"NDCG@{k}"]:.3f}' for k in args.ks]))
+    print(' '*13 + ', '.join([f'Recall@{k}: {metrics[f"Recall@{k}"]:.3f}' for k in args.ks]))
+    print(' '*13 + ', '.join([f'  NDCG@{k}: {metrics[f"NDCG@{k}"]:.3f}' for k in args.ks]))
 
     if writer:
         writer.add_scalar(f'{mode}/Loss', average_meter_set[f'{mode} loss'].avg, epoch)
@@ -126,18 +122,19 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
 
     if inference:
         split = 'train' if mode == 'Tra' else mode.lower()
-        dataset = HDF5DatasetText(os.path.join(args.data_folder, 
+        dataset = HDF5DatasetText(os.path.join(args.root_dir, args.data_folder, 
                                                f'{args.preprocessed_data_filename}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
         all_candidates_text, all_candidates_embed = dataset.get_all_candidates()
         pass # TODO: finish inference
     
-def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model):
+def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args):
     # TODO: what about the candidates with no next query?
     all_candidates_no_pad = torch.vstack(all_candidates_no_pad)
     all_labels_for_all_cand = torch.zeros(len(all_labels_no_pad), all_candidates_no_pad.size(0))
     all_candidate_lengths_flat = torch.concat(all_candidate_lengths)
     all_candidate_lengths_cumsum = torch.cumsum(all_candidate_lengths_flat, dim=0)
-    all_candidate_lengths_cumsum = torch.cat((torch.tensor([0], dtype=all_candidate_lengths_cumsum.dtype), all_candidate_lengths_cumsum)) # insert 0 at the beginning
+    all_candidate_lengths_cumsum = torch.cat((torch.tensor([0], dtype=all_candidate_lengths_cumsum.dtype, device=all_candidate_lengths_flat.device), 
+                                              all_candidate_lengths_cumsum)) # insert 0 at the beginning
     for r, label in enumerate(all_labels_no_pad):
         all_labels_for_all_cand[r, all_candidate_lengths_cumsum[r]:all_candidate_lengths_cumsum[r+1]] = label
 
@@ -145,6 +142,8 @@ def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_
     with torch.no_grad():
         for batch in data_loader:
             current_queries, padded_histories, history_lengths, _, _, _, _, _, _ = batch
+            current_queries, padded_histories, history_lengths = \
+                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device)
             batch_size = current_queries.size(0)
             scores = model(current_queries, padded_histories, history_lengths, all_candidates_no_pad.unsqueeze(0).expand(batch_size, -1, -1))
             all_scores_for_all_cand.append(scores)
@@ -180,7 +179,7 @@ def inference(args, model, query, history, candidate, candidate_embed=None, next
     # (1) Rank candidates based on predicted scores; 
     # (2) extract the top-k candidates; 
     # (3) display the results; compute metrics
-    # TODO: move this to another main file for inference
+    # TODO: move this to another main file for inference task
         
 
 

@@ -33,8 +33,8 @@ def recalls_and_ndcgs_for_ks(scores, labels, ks):
     '''
     metrics = {}
 
-    scores = scores
-    labels = labels
+    scores = scores.to('cpu')
+    labels = labels.to('cpu')
     answer_count = labels.sum(1)
 
     labels_float = labels.float()

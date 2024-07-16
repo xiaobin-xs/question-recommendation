@@ -8,12 +8,8 @@ class HistoryEncoder(nn.Module):
     def __init__(self, input_size, hidden_size, dropout=0.1, num_layers=1):
         super(HistoryEncoder, self).__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, dropout=dropout, batch_first=True)
-        # self.attention = nn.Linear(hidden_size, 1)  # Attention layer to weigh history embeddings
 
     def forward(self, histories, history_lengths):
-        # attention_weights = F.softmax(self.attention(lstm_out), dim=1)
-        # context_vector = torch.sum(attention_weights * lstm_out, dim=1)
-        # lstm_out, (hidden_state, _) = self.lstm(histories)
 
         # Pack the sequences # TODO: handle zero history lengths
         history_lengths_cp = history_lengths.clone()

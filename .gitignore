@@ -5,3 +5,5 @@ test.ipynb
 data/*
 experiments/*
 scripts/*.sh
+!scripts/init.sh
+*.yaml

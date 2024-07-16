@@ -9,7 +9,7 @@ from embed import get_sentence_embedding_model
 def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
     seed = args.seed
 
-    df = process_chat_json(data_folder, raw_json_file)
+    df = process_chat_json(data_folder, raw_json_file, args)
     chatId = df['chatId'].unique()
     sorted_chatId = np.sort(chatId)
 
@@ -26,7 +26,7 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
 
     for chatId_list, split in zip([train_chatId, val_chatId, test_chatId], ['train', 'val', 'test']):
         df_split = df[df['chatId'].isin(chatId_list)]
-        with h5py.File(os.path.join(data_folder, f'{save_file_name}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'), 'w') as h5f:
+        with h5py.File(os.path.join(args.root_dir, data_folder, f'{save_file_name}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'), 'w') as h5f:
             for interactionId in tqdm(df_split['id'].tolist()):
                 curr_data = df_split[df_split['id'] == interactionId]
                 chatId = curr_data['chatId'].values[0]
@@ -66,11 +66,11 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
                 obs_group.create_dataset('candidate_labels', data=candidate_labels)
 
 
-def process_chat_json(path, file):
+def process_chat_json(path, file, args):
     '''
     by: 'chatId' or 'userId'
     '''
-    file_path = os.path.join(path, file)
+    file_path = os.path.join(args.root_dir, path, file)
     data = []
     with open(file_path, 'r') as f:
         for line in f:
