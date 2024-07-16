@@ -84,6 +84,14 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--candidate-scope",
+        type=str,
+        default='batch',
+        choices=['own', 'batch'],
+        help="scope of candidates to consider during learning; 'own' means only consider the candidates for each query, 'batch' means consider all candidates in the batch",
+    )
+
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=16,
