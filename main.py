@@ -18,6 +18,7 @@ def main():
         f'{args.sentence_transformer_type}',
         f'{args.score_fn}',
         f'{args.candidate_scope}',
+        f'batch_{args.batch_size}',
         f'dropout_{args.fc_dropout}',
         f'margin_{args.margin_hinge}',
         f'weight_{args.weight_bce}',
@@ -26,6 +27,8 @@ def main():
         ])
     
     fix_random_seed_as(args.seed)
+    if 10 not in args.ks:
+        args.ks.append(10)
 
     # Create a logs directory and a subdirectory for this run
     log_dir = os.path.join(args.root_dir, 'experiments', args.name)

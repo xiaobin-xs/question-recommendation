@@ -20,13 +20,27 @@ def train(args, train_loader, val_loader, test_loader):
     accum_iter = 0
     model = model.to(args.device)
     writer = SummaryWriter(log_dir=os.path.join(args.root_dir, args.log_dir, 'runs'))
+    best_val_recall_at10 = 0
+    early_stopping_counter = 0
 
     for epoch in range(args.epochs):
         print('-'*25 + f'Epoch {epoch+1}' + '-'*25)
         accum_iter = train_one_epoch(args, model, train_loader, optimizer, criterion, epoch, accum_iter)
-        evaluate(args, model, train_loader, criterion, epoch, writer, mode='Tra', inference=True)
-        evaluate(args, model, val_loader, criterion, epoch, writer, mode='Val')
-        evaluate(args, model, test_loader, criterion, epoch, writer, mode='Test')
+        torch.save(model.to('cpu').state_dict(), os.path.join(args.root_dir, args.log_dir, 'last_model.pth'))
+        _ = evaluate(args, model, train_loader, criterion, epoch, writer, mode='Tra', inference=True)
+        val_recall_at10 = evaluate(args, model, val_loader, criterion, epoch, writer, mode='Val')
+        _ = evaluate(args, model, test_loader, criterion, epoch, writer, mode='Test')
+
+        if val_recall_at10 > best_val_recall_at10:
+            best_val_recall_at10 = val_recall_at10
+            torch.save(model.to('cpu').state_dict(), os.path.join(args.root_dir, args.log_dir, 'best_model.pth'))
+            print(f'Better val recall@10: {val_recall_at10:.3f}, best model saved.')
+            early_stopping_counter = 0
+        else:
+            early_stopping_counter += 1
+            if early_stopping_counter >= args.patience:
+                print(f'Early stopping at epoch {epoch+1} after {args.patience} epochs without improvement.')
+                break
 
 def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter):
     model.train()
@@ -55,11 +69,9 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
         average_meter_set.update('tra bce', bce_loss)
         accum_iter += batch_size
 
-        if accum_iter % 40 == 0:
-            print('Epoch {}, running loss {:.3f} '.format(epoch+1, average_meter_set['tra loss'].avg))
+        # if accum_iter % 40 == 0:
+        #     print('Epoch {}, running loss {:.3f} '.format(epoch+1, average_meter_set['tra loss'].avg))
     
-    # TODO: save model checkpoint; early stopping; best model based on validation recall@10
-
     return accum_iter
 
 def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inference=False):
@@ -119,6 +131,8 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
         writer.add_scalar(f'{mode}/FirstHit%', first_hit_perctg, epoch)
         if 10 in args.ks:
             writer.add_scalar(f'{mode}/Recall@10', metrics['Recall@10'], epoch)
+        if 5 in args.ks:
+            writer.add_scalar(f'{mode}/Recall@5', metrics['Recall@5'], epoch)
 
     if inference:
         split = 'train' if mode == 'Tra' else mode.lower()
@@ -126,6 +140,8 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
                                                f'{args.preprocessed_data_filename}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
         all_candidates_text, all_candidates_embed = dataset.get_all_candidates()
         pass # TODO: finish inference
+
+    return metrics['Recall@10']
     
 def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args):
     # TODO: what about the candidates with no next query?

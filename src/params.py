@@ -128,6 +128,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--patience",
+        type=int,
+        default=10,
+        help="patience for early stopping",
+    )
+
+    parser.add_argument(
         "--epochs",
         type=int,
         default=20,
