@@ -1,0 +1,4 @@
+h5py==3.9.0
+sentence_transformers
+langchain-community
+transformers==4.41.2
