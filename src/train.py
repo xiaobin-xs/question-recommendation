@@ -113,10 +113,11 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
     all_scores_for_all_cand, all_labels_for_all_cand = \
         infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args)
 
-    first_hit_perctg = calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
+    first_hit_perctg, first_hit_perctg_v2, first_hit_perctg_v3 = \
+        calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
     metrics = recalls_and_ndcgs_for_ks(all_scores_for_all_cand, all_labels_for_all_cand, args.ks)
 
-    print(f'Epoch {epoch+1}, {mode} first hit%: {first_hit_perctg:.3f}')
+    print(f'Epoch {epoch+1}, {mode} first hit%: {first_hit_perctg:.3f}, {first_hit_perctg_v2:.3f}, {first_hit_perctg_v3:.3f}')
     print('Epoch {}, {} loss {:.3f}, hinge {:.3f}, bce {:.3f}'.format(epoch+1, mode, average_meter_set[f'{mode} loss'].avg,
                                                                          average_meter_set[f'{mode} hinge'].avg,
                                                                          average_meter_set[f'{mode} bce'].avg
@@ -129,10 +130,14 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
         writer.add_scalar(f'{mode}/HingeLoss', average_meter_set[f'{mode} hinge'].avg, epoch)
         writer.add_scalar(f'{mode}/BCELoss', average_meter_set[f'{mode} bce'].avg, epoch)
         writer.add_scalar(f'{mode}/FirstHit%', first_hit_perctg, epoch)
+        writer.add_scalar(f'{mode}/FirstHit%v2', first_hit_perctg_v2, epoch)
+        writer.add_scalar(f'{mode}/FirstHit%v3', first_hit_perctg_v3, epoch)
         if 10 in args.ks:
             writer.add_scalar(f'{mode}/Recall@10', metrics['Recall@10'], epoch)
         if 5 in args.ks:
             writer.add_scalar(f'{mode}/Recall@5', metrics['Recall@5'], epoch)
+        if 3 in args.ks:
+            writer.add_scalar(f'{mode}/Recall@3', metrics['Recall@3'], epoch)
 
     if inference:
         split = 'train' if mode == 'Tra' else mode.lower()

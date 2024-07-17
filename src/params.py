@@ -19,6 +19,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        "--comment",
+        type=str,
+        default="",
+        help="additional comment of the experiment, will add to the end of the exp name",
+    )
+    
+    parser.add_argument(
         "--root-dir",
         type=str,
         default="./",
@@ -130,7 +137,7 @@ def parse_args():
     parser.add_argument(
         "--patience",
         type=int,
-        default=10,
+        default=20,
         help="patience for early stopping",
     )
 

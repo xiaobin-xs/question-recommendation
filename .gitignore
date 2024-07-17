@@ -4,6 +4,7 @@ sentence-transformer/
 test.ipynb
 data/*
 experiments/*
+archived-experiments/*
 scripts/*.sh
 !scripts/init.sh
 *.yaml

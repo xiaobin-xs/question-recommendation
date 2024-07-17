@@ -24,7 +24,7 @@ def main():
         f'weight_{args.weight_bce}',
         f'lr_{args.lr}',
         f'seed_{args.seed}',
-        ])
+        ]) + (f'_{args.comment}' if args.comment else '')
     
     fix_random_seed_as(args.seed)
     if 10 not in args.ks:
