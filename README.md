@@ -23,8 +23,9 @@ Example script: sweep through hyperparameters
 ```bash
 # Define the possible values for each hyperparameter
 dropout_values=(0.3 0.5 0.7)
-margin_hinge_values=(0.1 0.2 0.3)
-weight_bce_values=(0.5 1.0 1.5)
+margin_hinge_values=(0.1 0.3 0.5)
+weight_bce_values=(0 1.0 5.0)
+score_fn_values=("custom")
 
 # Loop through each combination of hyperparameters
 for dropout in "${dropout_values[@]}"
@@ -33,20 +34,26 @@ do
     do
         for weight_bce in "${weight_bce_values[@]}"
         do
-            echo "Running with dropout=$dropout, margin-hinge=$margin_hinge, weight-bce=$weight_bce"
-            python main.py \
-                --sentence-transformer-type finetuned \
-                --sentence-transformer-path sentence-transformer/embedding_model_tuned/ \
-                --seed 1024 \
-                --max-history-len -1 \
-                --batch-size 16 \
-                --lstm-dropout $dropout \
-                --score-fn cosine \
-                --fc-dropout $dropout \
-                --lr 0.001 \
-                --epochs 30 \
-                --margin-hinge $margin_hinge \
-                --weight-bce $weight_bce
+            for score_fn in "${score_fn_values[@]}"
+            do
+                echo "Running with dropout=$dropout, margin-hinge=$margin_hinge, weight-bce=$weight_bce"
+                python main.py \
+                    --comment "newFirstHitRate"\
+                    --sentence-transformer-type finetuned \
+                    --sentence-transformer-path sentence-transformer/embedding_model_tuned/ \
+                    --seed 1111 \
+                    --max-history-len -1 \
+                    --candidate-scope batch \
+                    --batch-size 16 \
+                    --lstm-dropout $dropout \
+                    --score-fn $score_fn \
+                    --fc-dropout $dropout \
+                    --lr 0.001 \
+                    --epochs 100 \
+                    --patience 20 \
+                    --margin-hinge $margin_hinge \
+                    --weight-bce $weight_bce
+            done
         done
     done
 done
