@@ -12,24 +12,25 @@ from params import fix_random_seed_as
 
 def train(args, train_loader, val_loader, test_loader):
     hidden_size = args.embed_size
+    device = torch.device(args.device)
     fix_random_seed_as(args.seed)
-    model = QuestionRecommender(hidden_size, lstm_dropout=args.lstm_dropout, score_fn=args.score_fn)
+    model = QuestionRecommender(hidden_size, lstm_dropout=args.lstm_dropout, score_fn=args.score_fn, fc_dropout=args.fc_dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = RecommendationLoss(margin_hinge=args.margin_hinge, weight_bce=args.weight_bce)
 
     accum_iter = 0
-    model = model.to(args.device)
+    model = model.to(device)
     writer = SummaryWriter(log_dir=os.path.join(args.root_dir, args.log_dir, 'runs'))
     best_val_recall_at10 = 0
     early_stopping_counter = 0
 
     for epoch in range(args.epochs):
         print('-'*25 + f'Epoch {epoch+1}' + '-'*25)
-        accum_iter = train_one_epoch(args, model, train_loader, optimizer, criterion, epoch, accum_iter)
+        accum_iter = train_one_epoch(args, model, train_loader, optimizer, criterion, epoch, accum_iter, device)
         torch.save(model.to('cpu').state_dict(), os.path.join(args.root_dir, args.log_dir, 'last_model.pth'))
-        _ = evaluate(args, model, train_loader, criterion, epoch, writer, mode='Tra', inference=True)
-        val_recall_at10 = evaluate(args, model, val_loader, criterion, epoch, writer, mode='Val')
-        _ = evaluate(args, model, test_loader, criterion, epoch, writer, mode='Test')
+        _ = evaluate(args, model, train_loader, criterion, epoch, writer, device, mode='Tra', inference=True)
+        val_recall_at10 = evaluate(args, model, val_loader, criterion, epoch, writer, device, mode='Val')
+        _ = evaluate(args, model, test_loader, criterion, epoch, writer, device, mode='Test')
 
         if val_recall_at10 > best_val_recall_at10:
             best_val_recall_at10 = val_recall_at10
@@ -42,7 +43,7 @@ def train(args, train_loader, val_loader, test_loader):
                 print(f'Early stopping at epoch {epoch+1} after {args.patience} epochs without improvement.')
                 break
 
-def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter):
+def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter, device):
     model.train()
     average_meter_set = AverageMeterSet()
     for batch in data_loader:
@@ -50,9 +51,9 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
                 batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = batch
         current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
                 batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = \
-                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device), \
-                padded_candidates.to(args.device), candidate_lengths.to(args.device), labels.to(args.device), \
-                batch_candidates.to(args.device), candidate_lengths_for_batch_cand.to(args.device), labels_for_all_cand.to(args.device)
+                current_queries.to(device), padded_histories.to(device), history_lengths.to(device), \
+                padded_candidates.to(device), candidate_lengths.to(device), labels.to(device), \
+                batch_candidates.to(device), candidate_lengths_for_batch_cand.to(device), labels_for_all_cand.to(device)
         batch_size = current_queries.size(0)
         optimizer.zero_grad()
         if args.candidate_scope == 'own':
@@ -74,7 +75,7 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
     
     return accum_iter
 
-def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inference=False):
+def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='Val', inference=False):
     model.eval()
     average_meter_set = AverageMeterSet()
     all_scores = []
@@ -88,9 +89,9 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
                 batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = batch
             current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
                 batch_candidates, candidate_lengths_for_batch_cand, labels_for_all_cand = \
-                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device), \
-                padded_candidates.to(args.device), candidate_lengths.to(args.device), labels.to(args.device), \
-                batch_candidates.to(args.device), candidate_lengths_for_batch_cand.to(args.device), labels_for_all_cand.to(args.device)
+                current_queries.to(device), padded_histories.to(device), history_lengths.to(device), \
+                padded_candidates.to(device), candidate_lengths.to(device), labels.to(device), \
+                batch_candidates.to(device), candidate_lengths_for_batch_cand.to(device), labels_for_all_cand.to(device)
             if args.candidate_scope == 'own':
                 scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
                 loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
@@ -111,7 +112,7 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
             all_labels_no_pad.extend([label[:candidate_length] for label, candidate_length in zip(labels, candidate_lengths)])
     
     all_scores_for_all_cand, all_labels_for_all_cand = \
-        infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args)
+        infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args, device)
 
     first_hit_perctg, first_hit_perctg_v2, first_hit_perctg_v3 = \
         calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
@@ -148,7 +149,7 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, mode='Val', inf
 
     return metrics['Recall@10']
     
-def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args):
+def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args, device):
     # TODO: what about the candidates with no next query?
     all_candidates_no_pad = torch.vstack(all_candidates_no_pad)
     all_labels_for_all_cand = torch.zeros(len(all_labels_no_pad), all_candidates_no_pad.size(0))
@@ -164,7 +165,7 @@ def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_
         for batch in data_loader:
             current_queries, padded_histories, history_lengths, _, _, _, _, _, _ = batch
             current_queries, padded_histories, history_lengths = \
-                current_queries.to(args.device), padded_histories.to(args.device), history_lengths.to(args.device)
+                current_queries.to(device), padded_histories.to(device), history_lengths.to(device)
             batch_size = current_queries.size(0)
             scores = model(current_queries, padded_histories, history_lengths, all_candidates_no_pad.unsqueeze(0).expand(batch_size, -1, -1))
             all_scores_for_all_cand.append(scores)

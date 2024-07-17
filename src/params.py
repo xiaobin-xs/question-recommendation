@@ -1,14 +1,16 @@
+import json
+import os
 import argparse
 import random
 import torch
 import numpy as np
 
 if torch.cuda.is_available():
-    DEVICE = torch.device('cuda')
+    DEVICE = 'cuda'
 # elif torch.backends.mps.is_available():
-#     DEVICE = torch.device('mps') # some error with mps...
+#     DEVICE = 'mps' # some error with mps...
 else:
-    DEVICE = torch.device('cpu')
+    DEVICE = 'cpu'
 
 def print_args(args):
     print("Running with the following configuration:")
@@ -174,6 +176,32 @@ def parse_args():
 
     args = parser.parse_args()
 
+    return args
+
+
+def parse_log_dir():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--exp-name",
+        type=str,
+        default=None,
+        help="name of the experiment",
+    )
+
+    args = parser.parse_args()
+
+    return args
+
+def save_args(args):
+    # save args as a json file
+    with open(os.path.join(args.log_dir, 'args.json'), 'w') as f:
+        json.dump(vars(args), f, indent=4)
+
+def load_args(log_dir):
+    with open(log_dir, 'r') as f:
+        loaded_args = json.load(f)
+    args = argparse.Namespace(**loaded_args)
     return args
 
 # code from https://github.com/jaywonchung/BERT4Rec-VAE-Pytorch/blob/master/utils.py#L65

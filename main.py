@@ -1,3 +1,4 @@
+import json
 import os, sys
 import torch
 from datetime import datetime
@@ -6,9 +7,8 @@ sys.path.append('src/')
 
 from data import get_data_loaders
 from logger import DualLogger
-from params import parse_args, print_args
+from params import parse_args, print_args, save_args, fix_random_seed_as
 from train import train
-from params import fix_random_seed_as
 
 def main():
     args = parse_args()
@@ -44,12 +44,12 @@ def main():
     # Get data loaders
     train_loader, val_loader, test_loader, embed_size = get_data_loaders(args)
     args.embed_size = embed_size
+    
+    # save args as a json file
+    save_args(args)
 
     # train
     train(args, train_loader, val_loader, test_loader)
-
-    # # evaluation
-    # eval(args, test_loader)
 
 
 
