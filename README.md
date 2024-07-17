@@ -25,7 +25,7 @@ Example script: sweep through hyperparameters
 dropout_values=(0.3 0.5 0.7)
 margin_hinge_values=(0.1 0.3 0.5)
 weight_bce_values=(0 1.0 5.0)
-score_fn_values=("custom")
+score_fn_values=("custom" "cosine")
 
 # Loop through each combination of hyperparameters
 for dropout in "${dropout_values[@]}"
