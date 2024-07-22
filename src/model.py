@@ -81,6 +81,7 @@ class QuestionRecommender(nn.Module):
         fc_dropout: dropout rate for the fully connected layer in the Score module, if score_fn is 'custom'
         '''
         super(QuestionRecommender, self).__init__()
+        self.hidden_size = hidden_size
         self.history_encoder = HistoryEncoder(hidden_size, hidden_size, dropout=lstm_dropout, num_layers=1)
         self.fc = MLP(hidden_size * 2, hidden_size, dropout=fc_dropout)  # Combine history and query embeddings
         if score_fn == 'cosine':
@@ -99,5 +100,7 @@ class QuestionRecommender(nn.Module):
         
         # Compute similarity scores with each candidate question
         scores = self.score_fn(combined_embedding, candidate_embeddings)
-        return scores
+        top_cand_emb = torch.gather(candidate_embeddings, 1, scores.argmax(1).unsqueeze(1).unsqueeze(2).expand(-1, -1, 384)).squeeze(1)
+        similarity_top_cand = F.cosine_similarity(combined_embedding, top_cand_emb)
+        return scores, similarity_top_cand
 

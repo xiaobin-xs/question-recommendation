@@ -61,15 +61,17 @@ class BinaryCELoss(nn.Module):
 
 
 class RecommendationLoss(nn.Module):
-    def __init__(self, margin_hinge=0.1, weight_bce=1.0):
+    def __init__(self, margin_hinge=0.1, weight_bce=1.0, weight_sim=1.0):
         super(RecommendationLoss, self).__init__()
         self.hingeRankLoss = HingeRankLoss(margin=margin_hinge)
         self.bceLoss = BinaryCELoss()
         self.weight_bce = weight_bce
+        self.weight_sim = weight_sim
 
-    def forward(self, scores, candidate_lengths, labels):
+    def forward(self, scores, candidate_lengths, labels, similarity_top_cand):
         # Scores: (batch_size, max_num_candidates)
         hinge_rank_loss = self.hingeRankLoss(scores, candidate_lengths, labels)
         bce_loss = self.bceLoss(scores, candidate_lengths, labels)
-        combined_loss = hinge_rank_loss + self.weight_bce * bce_loss
-        return combined_loss, hinge_rank_loss.cpu().item(), bce_loss.cpu().item()
+        similarity_loss = -similarity_top_cand.mean()
+        combined_loss = hinge_rank_loss + self.weight_bce * bce_loss + self.weight_sim * similarity_loss
+        return combined_loss, hinge_rank_loss.cpu().item(), bce_loss.cpu().item(), similarity_loss.cpu().item()

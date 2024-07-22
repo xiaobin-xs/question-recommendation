@@ -6,10 +6,14 @@ import os, h5py
 
 from embed import get_sentence_embedding_model
 
-def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
+def prepare_chat_data(data_folder, save_file_name, args, raw_json_file=None):
     seed = args.seed
-
-    df = process_chat_json(data_folder, raw_json_file, args)
+    
+    if raw_json_file is None: # process multiple json files from a dir
+        df, last_date = process_chat_multi_jsons(data_folder, args, remove_punc=False)
+    else: # process a single json file
+        df = process_chat_json(data_folder, raw_json_file, args)
+        last_date = str(raw_json_file[-15:-5])
     chatId = df['chatId'].unique()
     sorted_chatId = np.sort(chatId)
 
@@ -26,7 +30,8 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
 
     for chatId_list, split in zip([train_chatId, val_chatId, test_chatId], ['train', 'val', 'test']):
         df_split = df[df['chatId'].isin(chatId_list)]
-        with h5py.File(os.path.join(args.root_dir, data_folder, f'{save_file_name}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'), 'w') as h5f:
+        with h5py.File(os.path.join(args.root_dir, data_folder, 'preprocessed', 
+                                    f'{save_file_name}_{split}_{args.sentence_transformer_type}_{last_date}-seed_{args.seed}.h5'), 'w') as h5f:
             for interactionId in tqdm(df_split['id'].tolist()):
                 curr_data = df_split[df_split['id'] == interactionId]
                 chatId = curr_data['chatId'].values[0]
@@ -65,8 +70,88 @@ def prepare_chat_data(data_folder, raw_json_file, save_file_name, args):
                 obs_group.create_dataset('candidate_embeddings', data=candidate_embeddings)
                 obs_group.create_dataset('candidate_labels', data=candidate_labels)
 
+def process_chat_multi_jsons(path, args, remove_punc=True):
+    '''
+    by: 'chatId' or 'userId'
+    '''
+    data_path = os.path.join(args.root_dir, path)
+    files = sorted([json_file for json_file in os.listdir(data_path) if json_file.endswith('.json')])
+    dates = [file[-15:-5] for file in files]
+    last_date = str(max(dates))
+    
+    data = []
+    for file in files:
+        # print(file)
+        file_path = os.path.join(data_path, file)
+        print(file_path)
+        with open(file_path, 'r') as f:
+            for line in f:
+                data.extend(json.loads(line))
 
-def process_chat_json(path, file, args):
+    columns = ['id', 'request', 'response', 'trace', 'createdDate', 'chatId', 'imsOrgId', 'createdBy', 'sandboxName', 'sandboxId', 'userFeedback', 'smeFeedback'] 
+    dt = pd.DataFrame(columns=columns)
+    for i in tqdm(range(len(data))):
+        d = data[i]
+        dt.loc[i] = [d.get(c, np.nan) for c in columns]
+    # remove duplicates
+    dt = dt.drop_duplicates(subset=['id'])
+
+
+    dt.createdDate = pd.to_datetime(dt.createdDate)
+    dt = dt.sort_values(['chatId', 'createdDate'], ascending=[True, True], ignore_index=True)
+
+    dt['Intent'] = dt["trace"].apply(
+            lambda x: safe_get(x, 'routing', {'route_id': 'RoutingNotPresent'})['route_id'])
+    print(f'\t Total:   # of interactions: {dt.shape[0]}, # of chatIds: {dt.chatId.nunique()}, # of userIds: {dt.createdBy.nunique()}')
+    dtconcept = dt[dt.Intent=='ConceptsQA']
+    print(f'\t Concept: # of interactions: {dtconcept.shape[0]}, # of chatIds: {dtconcept.chatId.nunique()}, # of userIds: {dtconcept.createdBy.nunique()}')
+    
+    dt['Response'] = dt['response'].apply(lambda x: x[0]['message'])
+    dt['Query'] =dt['request'].apply(lambda x: x['message'])
+    dt['Query_rewrite'] = dt['trace'].apply(lambda x: safe_get(x, 'question_rewrite', {'task_response': 'No question_rewrite'})['task_response'])
+
+    dt['chat_history'] = dt['trace'].apply(lambda x: safe_get(x, 'chat_history', []))
+    dt['query_history'] = dt.chat_history.apply(lambda chat_history: [ch['user'] for ch in chat_history])
+
+    dt['prompt_suggestions'] = dt.trace.apply(lambda x: parse_prompt_suggestions(x) if type(x) == dict else np.nan)
+    dt['num_prompt_suggestions'] = dt.prompt_suggestions.apply(lambda x: len(x) if type(x) == list else 0)
+
+    # For each row, get the next query in the same chatId
+    dt['next_query'] = None
+    for i in range(dt.shape[0]):
+        if i < dt.shape[0]-1:
+            if dt.loc[i, 'chatId'] == dt.loc[i+1, 'chatId'] and dt.loc[i+1, 'Intent'] == 'ConceptsQA' :
+                dt.loc[i, 'next_query'] = dt.loc[i+1, 'Query']
+    dt['next_query_in_suggestions'] = dt.apply(lambda x: x['next_query'] in x['prompt_suggestions'] if type(x['prompt_suggestions']) == list else False, axis=1)
+
+
+    # if Query_rewrite is not present, use Query
+    dt['Query'] = dt.apply(lambda x: x['Query'] if x['Query_rewrite'] == 'No question_rewrite' 
+                                                    or x['next_query_in_suggestions'] is True 
+                                                else x['Query_rewrite'], axis=1)
+    
+    # repeat again so that next_query is updated with Query_rewrite
+    dt['next_query'] = None
+    for i in range(dt.shape[0]):
+        if i < dt.shape[0]-1:
+            if dt.loc[i, 'chatId'] == dt.loc[i+1, 'chatId'] and dt.loc[i+1, 'Intent'] == 'ConceptsQA' :
+                dt.loc[i, 'next_query'] = dt.loc[i+1, 'Query']
+    
+    if remove_punc:
+        # remove punctuation and question mark, convert to lowercase
+        dt['prompt_suggestions'] = dt.prompt_suggestions.apply(lambda x: [s.replace(r'[^\w\s]', '').lower() for s in x] if type(x) == list else x)
+        dt['Query'] = dt['Query'].str.replace(r'[^\w\s]', '').str.lower()
+        dt['next_query'] = dt['next_query'].apply(lambda x: x.replace(r'[^\w\s]', '').lower() if type(x) == str else x)
+
+    dt = dt[dt.Intent == 'ConceptsQA']
+    # chatId_with_conceptsQA = dt[dt.Intent == 'ConceptsQA']['chatId'].unique()
+    # dt = dt[dt.chatId.isin(chatId_with_conceptsQA)]
+    print(f'\t Prompt suggest in next query: {dt.next_query_in_suggestions.sum() / dt.shape[0]:.2%}')
+    dt = dt[['id', 'createdDate', 'chatId', 'Query', 'query_history', 'next_query', 'prompt_suggestions', 'Intent', 'next_query_in_suggestions']]
+
+    return dt, last_date
+
+def process_chat_json(path, file, args, remove_punc=True):
     '''
     by: 'chatId' or 'userId'
     '''
@@ -108,10 +193,12 @@ def process_chat_json(path, file, args):
     dt['Query'] = dt.apply(lambda x: x['Query'] if x['Query_rewrite'] == 'No question_rewrite' 
                                                     or x['next_query_in_suggestions'] is True 
                                                 else x['Query_rewrite'], axis=1)
-    # remove punctuation and question mark, convert to lowercase
-    dt['prompt_suggestions'] = dt.prompt_suggestions.apply(lambda x: [s.replace(r'[^\w\s]', '').lower() for s in x] if type(x) == list else x)
-    dt['Query'] = dt['Query'].str.replace(r'[^\w\s]', '').str.lower()
-    dt['next_query'] = dt['next_query'].apply(lambda x: x.replace(r'[^\w\s]', '').lower() if type(x) == str else x)
+    
+    if remove_punc:
+        # remove punctuation and question mark, convert to lowercase
+        dt['prompt_suggestions'] = dt.prompt_suggestions.apply(lambda x: [s.replace(r'[^\w\s]', '').lower() for s in x] if type(x) == list else x)
+        dt['Query'] = dt['Query'].str.replace(r'[^\w\s]', '').str.lower()
+        dt['next_query'] = dt['next_query'].apply(lambda x: x.replace(r'[^\w\s]', '').lower() if type(x) == str else x)
 
     dt = dt[dt.Intent == 'ConceptsQA']
     # chatId_with_conceptsQA = dt[dt.Intent == 'ConceptsQA']['chatId'].unique()
@@ -124,7 +211,7 @@ def process_chat_json(path, file, args):
 
 def parse_prompt_suggestions(trace):
     if 'question_answering' in trace.keys() and type(trace['question_answering']) == dict:
-        if 'prompt_suggestions' in trace['question_answering'].keys():
+        if 'prompt_suggestions' in trace['question_answering'].keys() and trace['question_answering']['prompt_suggestions'] is not None:
             if len(trace['question_answering']['prompt_suggestions']) > 0:
                 return trace['question_answering']['prompt_suggestions']
             else:

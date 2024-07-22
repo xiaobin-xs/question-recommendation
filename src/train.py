@@ -6,7 +6,6 @@ from model import QuestionRecommender
 from loss import RecommendationLoss
 from logger import AverageMeterSet
 from eval import calc_first_hit_perctg, recalls_and_ndcgs_for_ks
-from embed import get_sentence_embedding_model
 from data import HDF5DatasetText
 from params import fix_random_seed_as
 
@@ -16,7 +15,7 @@ def train(args, train_loader, val_loader, test_loader):
     fix_random_seed_as(args.seed)
     model = QuestionRecommender(hidden_size, lstm_dropout=args.lstm_dropout, score_fn=args.score_fn, fc_dropout=args.fc_dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = RecommendationLoss(margin_hinge=args.margin_hinge, weight_bce=args.weight_bce)
+    criterion = RecommendationLoss(margin_hinge=args.margin_hinge, weight_bce=args.weight_bce, weight_sim=args.weight_sim)
 
     accum_iter = 0
     model = model.to(device)
@@ -34,7 +33,7 @@ def train(args, train_loader, val_loader, test_loader):
 
         if val_recall_at10 > best_val_recall_at10:
             best_val_recall_at10 = val_recall_at10
-            torch.save(model.to('cpu').state_dict(), os.path.join(args.root_dir, args.log_dir, 'best_model.pth'))
+            torch.save(model.to('cpu').state_dict(), os.path.join(args.root_dir, args.log_dir, 'best_model.pth')) # always save on cpu for compatibility
             print(f'Better val recall@10: {val_recall_at10:.3f}, best model saved.')
             early_stopping_counter = 0
         else:
@@ -57,11 +56,11 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
         batch_size = current_queries.size(0)
         optimizer.zero_grad()
         if args.candidate_scope == 'own':
-            scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
-            loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+            scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, padded_candidates)
+            loss, hinge_rank_loss, bce_loss, similarity_loss = criterion(scores, candidate_lengths, labels, similarity_top_cand)
         else:
-            scores = model(current_queries, padded_histories, history_lengths, batch_candidates)
-            loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand)
+            scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, batch_candidates)
+            loss, hinge_rank_loss, bce_loss, similarity_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand, similarity_top_cand)
         loss.backward()
         optimizer.step()
 
@@ -93,16 +92,17 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='V
                 padded_candidates.to(device), candidate_lengths.to(device), labels.to(device), \
                 batch_candidates.to(device), candidate_lengths_for_batch_cand.to(device), labels_for_all_cand.to(device)
             if args.candidate_scope == 'own':
-                scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
-                loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths, labels)
+                scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, padded_candidates)
+                loss, hinge_rank_loss, bce_loss, similarity_loss = criterion(scores, candidate_lengths, labels, similarity_top_cand)
             else:
-                scores = model(current_queries, padded_histories, history_lengths, batch_candidates)
-                loss, hinge_rank_loss, bce_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand)
-                scores = model(current_queries, padded_histories, history_lengths, padded_candidates)
+                scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, batch_candidates)
+                loss, hinge_rank_loss, bce_loss, similarity_loss = criterion(scores, candidate_lengths_for_batch_cand, labels_for_all_cand, similarity_top_cand)
+                scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, padded_candidates)
 
             average_meter_set.update(f'{mode} loss', loss.cpu().item())
             average_meter_set.update(f'{mode} hinge', hinge_rank_loss)
             average_meter_set.update(f'{mode} bce', bce_loss)
+            average_meter_set.update(f'{mode} similarity', -similarity_loss)
 
             all_scores.append(scores)
             all_candidate_lengths.append(candidate_lengths)
@@ -113,15 +113,16 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='V
     
     all_scores_for_all_cand, all_labels_for_all_cand = \
         infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args, device)
-
+    print(f'Selecting among {all_scores_for_all_cand.size(1)} candidates.')
     first_hit_perctg, first_hit_perctg_v2, first_hit_perctg_v3 = \
         calc_first_hit_perctg(all_scores, all_candidate_lengths, all_labels)
     metrics = recalls_and_ndcgs_for_ks(all_scores_for_all_cand, all_labels_for_all_cand, args.ks)
 
     print(f'Epoch {epoch+1}, {mode} first hit%: {first_hit_perctg:.3f}, {first_hit_perctg_v2:.3f}, {first_hit_perctg_v3:.3f}')
-    print('Epoch {}, {} loss {:.3f}, hinge {:.3f}, bce {:.3f}'.format(epoch+1, mode, average_meter_set[f'{mode} loss'].avg,
-                                                                         average_meter_set[f'{mode} hinge'].avg,
-                                                                         average_meter_set[f'{mode} bce'].avg
+    print('Epoch {}, {} loss {:.3f}, hinge {:.3f}, bce {:.3f}, cosine {:.3f}'.format(epoch+1, mode, average_meter_set[f'{mode} loss'].avg,
+                                                                                     average_meter_set[f'{mode} hinge'].avg,
+                                                                                     average_meter_set[f'{mode} bce'].avg,
+                                                                                     average_meter_set[f'{mode} similarity'].avg
                                                           ))
     print(' '*13 + ', '.join([f'Recall@{k}: {metrics[f"Recall@{k}"]:.3f}' for k in args.ks]))
     print(' '*13 + ', '.join([f'  NDCG@{k}: {metrics[f"NDCG@{k}"]:.3f}' for k in args.ks]))
@@ -130,6 +131,7 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='V
         writer.add_scalar(f'{mode}/Loss', average_meter_set[f'{mode} loss'].avg, epoch)
         writer.add_scalar(f'{mode}/HingeLoss', average_meter_set[f'{mode} hinge'].avg, epoch)
         writer.add_scalar(f'{mode}/BCELoss', average_meter_set[f'{mode} bce'].avg, epoch)
+        writer.add_scalar(f'{mode}/Similarity', average_meter_set[f'{mode} similarity'].avg, epoch)
         writer.add_scalar(f'{mode}/FirstHit%', first_hit_perctg, epoch)
         writer.add_scalar(f'{mode}/FirstHit%v2', first_hit_perctg_v2, epoch)
         writer.add_scalar(f'{mode}/FirstHit%v3', first_hit_perctg_v3, epoch)
@@ -142,7 +144,7 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='V
 
     if inference:
         split = 'train' if mode == 'Tra' else mode.lower()
-        dataset = HDF5DatasetText(os.path.join(args.root_dir, args.data_folder, 
+        dataset = HDF5DatasetText(os.path.join(args.root_dir, args.data_folder, 'preprocessed',
                                                f'{args.preprocessed_data_filename}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
         all_candidates_text, all_candidates_embed = dataset.get_all_candidates()
         pass # TODO: finish inference
@@ -167,41 +169,7 @@ def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_
             current_queries, padded_histories, history_lengths = \
                 current_queries.to(device), padded_histories.to(device), history_lengths.to(device)
             batch_size = current_queries.size(0)
-            scores = model(current_queries, padded_histories, history_lengths, all_candidates_no_pad.unsqueeze(0).expand(batch_size, -1, -1))
+            scores, similarity_top_cand = model(current_queries, padded_histories, history_lengths, all_candidates_no_pad.unsqueeze(0).expand(batch_size, -1, -1))
             all_scores_for_all_cand.append(scores)
     all_scores_for_all_cand = torch.vstack(all_scores_for_all_cand)
     return all_scores_for_all_cand, all_labels_for_all_cand
-
-def embed_query(query, args, type='single_sent'):
-    '''
-    type: 'single_sent' or 'multi_sent'
-    '''
-    embed_type, embed_model, sent_trans_embed_size = \
-        get_sentence_embedding_model(args)
-    encode_func = embed_model.embed_documents if embed_type == 'SentenceTransformerEmbeddings' else embed_model.encode
-    if type == 'single_sent':
-        query_embedding = ( encode_func([query]) ) [0]
-    elif type == 'multi-sent':
-        query_embedding = [encode_func([seq])[0] for seq in query]
-    return torch.tensor(query_embedding)
-
-def inference(args, model, query, history, candidate, candidate_embed=None, next_query=None):
-    '''
-    Inference for a single observation.
-    '''
-    model.eval()
-    query_embed = embed_query(query, args, type='single_sent')
-    history_embed = embed_query(history, args, type='multi_sent')
-    if candidate_embed is None:
-        candidate_embed = embed_query(candidate, args, type='multi_sent')
-    with torch.no_grad():
-        scores = model(query_embed.unsqueeze(0), history_embed.unsqueeze(0), 
-                       torch.tensor([len(history)]), candidate_embed.unsqueeze(0))
-    # TODO: to be finished... 
-    # (1) Rank candidates based on predicted scores; 
-    # (2) extract the top-k candidates; 
-    # (3) display the results; compute metrics
-    # TODO: move this to another main file for inference task
-        
-
-

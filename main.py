@@ -22,6 +22,7 @@ def main():
         f'dropout_{args.fc_dropout}',
         f'margin_{args.margin_hinge}',
         f'weight_{args.weight_bce}',
+        f'weight_sim_{args.weight_sim}',
         f'lr_{args.lr}',
         f'seed_{args.seed}',
         ]) + (f'_{args.comment}' if args.comment else '')

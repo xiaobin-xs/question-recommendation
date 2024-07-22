@@ -161,41 +161,51 @@ def get_data_loaders(args):
     max_history_len = args.max_history_len
     batch_size = args.batch_size
 
-    if os.path.exists(os.path.join(args.root_dir, data_folder, raw_json_file)):
-        # Preprocess the raw JSON file
-        if not os.path.exists(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5')):
-            print(f"Preprocessing data from {raw_json_file}...")
-            prepare_chat_data(data_folder, raw_json_file, preprocessed_data_filename, args)
-        else:
-            print(f"Data already preprocessed data for {raw_json_file}, directly loading the preprocessed data...")
-        train_dataset = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_train_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        val_dataset   = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_val_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        test_dataset  = HDF5Dataset(os.path.join(args.root_dir, data_folder, f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        
-        # to ensure reproducibility
-        g = torch.Generator()
-        g.manual_seed(args.seed)
-        def seed_worker(worker_id):
-            worker_seed = torch.initial_seed() % 2**32
-            np.random.seed(worker_seed)
-            random.seed(worker_seed)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
-                                  collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
-                                  worker_init_fn=seed_worker, generator=g)
-        val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, 
-                                  collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
-                                  worker_init_fn=seed_worker, generator=g)
-        test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, 
-                                  collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
-                                  worker_init_fn=seed_worker, generator=g)
-        # print train, val, test dataloader sizes
-        embed_size = train_dataset[0]['current_query'].size(0)
-        print(f"Using {args.sentence_transformer_type} sentence transformer with embedding size {embed_size}")
-        print(f"Train dataloader size: {len(train_loader)}")
-        print(f"Val dataloader size: {len(val_loader)}")
-        print(f"Test dataloader size: {len(test_loader)}")
+    if raw_json_file.endswith('.json'): # single json file
+        if not os.path.exists(os.path.join(args.root_dir, data_folder, raw_json_file)):
+            raise FileNotFoundError(f"File {raw_json_file} not found in {data_folder}")
+        last_date = raw_json_file[-15:-5]
+    else: # all json files in the dir
+        raw_json_file = None
+        data_path = os.path.join(args.root_dir, data_folder)
+        files = sorted([json_file for json_file in os.listdir(data_path) if json_file.endswith('.json')])
+        if len(files) == 0:
+            raise FileNotFoundError(f"No json files found in {data_folder}")
+        dates = [file[-15:-5] for file in files]
+        last_date = str(max(dates))
+
+    # Preprocess the raw JSON file
+    if not os.path.exists(os.path.join(args.root_dir, data_folder, 'preprocessed', f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}_{last_date}-seed_{args.seed}.h5')):
+        print(f"Preprocessing data ...")
+        prepare_chat_data(data_folder, preprocessed_data_filename, args, raw_json_file)
     else:
-        raise FileNotFoundError(f"File {raw_json_file} not found in {data_folder}")
+        print(f"Data already preprocessed data, directly loading the preprocessed data...")
+    train_dataset = HDF5Dataset(os.path.join(args.root_dir, data_folder, 'preprocessed', f'{preprocessed_data_filename}_train_{args.sentence_transformer_type}_{last_date}-seed_{args.seed}.h5'))
+    val_dataset   = HDF5Dataset(os.path.join(args.root_dir, data_folder, 'preprocessed', f'{preprocessed_data_filename}_val_{args.sentence_transformer_type}_{last_date}-seed_{args.seed}.h5'))
+    test_dataset  = HDF5Dataset(os.path.join(args.root_dir, data_folder, 'preprocessed', f'{preprocessed_data_filename}_test_{args.sentence_transformer_type}_{last_date}-seed_{args.seed}.h5'))
+    
+    # to ensure reproducibility
+    g = torch.Generator()
+    g.manual_seed(args.seed)
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
+                                collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
+                                worker_init_fn=seed_worker, generator=g)
+    val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, 
+                                collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
+                                worker_init_fn=seed_worker, generator=g)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, 
+                                collate_fn=lambda batch: chat_collate_fn(batch, max_history_len),
+                                worker_init_fn=seed_worker, generator=g)
+    # print train, val, test dataloader sizes
+    embed_size = train_dataset[0]['current_query'].size(0)
+    print(f"Using {args.sentence_transformer_type} sentence transformer with embedding size {embed_size}")
+    print(f"Train dataloader size: {len(train_loader)}")
+    print(f"Val dataloader size: {len(val_loader)}")
+    print(f"Test dataloader size: {len(test_loader)}")
 
     return train_loader, val_loader, test_loader, embed_size
 

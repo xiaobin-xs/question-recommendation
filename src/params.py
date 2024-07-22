@@ -51,8 +51,8 @@ def parse_args():
     parser.add_argument(
         "--raw-json-file",
         type=str,
-        default='copilot_prod_interactions_2023-08-01_2024-05-13.json',
-        help="batch size",
+        default='',
+        help="json file containing the raw data, empty string for all json files in the data folder",
     )
 
     parser.add_argument(
@@ -165,6 +165,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--weight-sim",
+        type=float,
+        default=0.1,
+        help="weight for the similarity loss",
+    )
+
+    parser.add_argument(
         "--ks",
         type=list,
         default=[1, 3, 5, 10, 30, 50],
@@ -199,7 +206,7 @@ def save_args(args):
         json.dump(vars(args), f, indent=4)
 
 def load_args(log_dir):
-    with open(log_dir, 'r') as f:
+    with open(os.path.join('experiments', log_dir, 'args.json'), 'r') as f:
         loaded_args = json.load(f)
     args = argparse.Namespace(**loaded_args)
     return args
