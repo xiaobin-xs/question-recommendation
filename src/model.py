@@ -15,6 +15,8 @@ class HistoryEncoder(nn.Module):
         history_lengths_cp = history_lengths.clone()
         history_lengths_cp[history_lengths_cp == 0] = 1
         packed_histories = nn.utils.rnn.pack_padded_sequence(histories, history_lengths_cp.cpu(), batch_first=True, enforce_sorted=False)
+        packed_histories = packed_histories.to(histories.device)
+        # print(f'history: {histories.device}, lstm: {next(self.lstm.parameters()).device}, model: {next(self.parameters()).device}')
         
         # Pass through LSTM
         packed_outputs, (hidden, cell) = self.lstm(packed_histories)

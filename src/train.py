@@ -44,6 +44,7 @@ def train(args, train_loader, val_loader, test_loader):
 
 def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum_iter, device):
     model.train()
+    model = model.to(device)
     average_meter_set = AverageMeterSet()
     for batch in data_loader:
         current_queries, padded_histories, history_lengths, padded_candidates, candidate_lengths, labels, \
@@ -76,6 +77,7 @@ def train_one_epoch(args, model, data_loader, optimizer, criterion, epoch, accum
 
 def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='Val', inference=False):
     model.eval()
+    model = model.to(device)
     average_meter_set = AverageMeterSet()
     all_scores = []
     all_candidate_lengths = []
@@ -142,17 +144,18 @@ def evaluate(args, model, data_loader, criterion, epoch, writer, device, mode='V
         if 3 in args.ks:
             writer.add_scalar(f'{mode}/Recall@3', metrics['Recall@3'], epoch)
 
-    if inference:
-        split = 'train' if mode == 'Tra' else mode.lower()
-        dataset = HDF5DatasetText(os.path.join(args.root_dir, args.data_folder, 'preprocessed',
-                                               f'{args.preprocessed_data_filename}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
-        all_candidates_text, all_candidates_embed = dataset.get_all_candidates()
-        pass # TODO: finish inference
+    # if inference:
+    #     split = 'train' if mode == 'Tra' else mode.lower()
+    #     dataset = HDF5DatasetText(os.path.join(args.root_dir, args.data_folder, 'preprocessed',
+    #                                            f'{args.preprocessed_data_filename}_{split}_{args.sentence_transformer_type}-seed_{args.seed}.h5'))
+    #     all_candidates_text, all_candidates_embed = dataset.get_all_candidates()
+    #     pass # TODO: finish inference
 
     return metrics['Recall@10']
     
 def infer_with_all_cand(all_candidates_no_pad, all_labels_no_pad, all_candidate_lengths, data_loader, model, args, device):
     # TODO: what about the candidates with no next query?
+    model = model.to(device)
     all_candidates_no_pad = torch.vstack(all_candidates_no_pad)
     all_labels_for_all_cand = torch.zeros(len(all_labels_no_pad), all_candidates_no_pad.size(0))
     all_candidate_lengths_flat = torch.concat(all_candidate_lengths)
